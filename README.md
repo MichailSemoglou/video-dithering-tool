@@ -39,7 +39,7 @@ pip install -r requirements.txt
 ### Development Installation
 
 ```bash
-git clone https://github.com/yourusername/video-dithering-tool.git
+git clone https://github.com/MichailSemoglou/video-dithering-tool.git
 cd video-dithering-tool
 pip install -r requirements.txt
 ```
