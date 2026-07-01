@@ -4,6 +4,7 @@ import cv2
 import tempfile
 import os
 import sys
+from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from video_dithering import (
@@ -12,7 +13,9 @@ from video_dithering import (
     jarvis_judice_ninke_dither,
     ordered_dither,
     random_dither,
-    apply_dithering
+    apply_dithering,
+    frame_to_gif_image,
+    DEFAULT_COLOR_PALETTE
 )
 
 class TestDitheringMethods(unittest.TestCase):
@@ -63,7 +66,25 @@ class TestDitheringMethods(unittest.TestCase):
             self.assertEqual(result.shape, self.grayscale_image.shape)
             self.assertEqual(result.dtype, np.uint8)
             self.assertTrue(np.all((result == 0) | (result == 255)))
-            
+
+    def test_ordered_dither_color_multi_color_palette_uses_threshold(self):
+        """Ordered dithering with a >2-color palette should vary by pixel position.
+
+        A uniform-gray input is equidistant from no single palette color, so its
+        nearest color is fixed for every pixel unless the Bayer threshold actually
+        perturbs the pixel before quantizing. If the threshold were ignored (as it
+        was before the fix), every pixel would quantize to the same single color.
+        """
+        palette = [(0, 0, 0), (255, 255, 255), (255, 0, 0), (0, 255, 0)]
+        uniform_image = np.full((8, 8, 3), 128, dtype=np.uint8)
+
+        result = ordered_dither(uniform_image, matrix_size=4, is_color=True, palette=palette)
+
+        unique_colors = np.unique(result.reshape(-1, 3), axis=0)
+        self.assertGreater(len(unique_colors), 1)
+        for color in unique_colors:
+            self.assertTrue(any(np.array_equal(color, p) for p in palette))
+
     def test_random_dither(self):
         """Test random dithering"""
         result = random_dither(self.grayscale_image, threshold_variance=50)
@@ -151,6 +172,55 @@ class TestParameterValidation(unittest.TestCase):
         for variance in variance_values:
             result = random_dither(self.test_image, threshold_variance=variance)
             self.assertEqual(result.shape, self.test_image.shape)
+
+class TestGifExport(unittest.TestCase):
+
+    def setUp(self):
+        self.grayscale_image = np.random.randint(0, 256, (20, 20), dtype=np.uint8)
+        self.color_image = np.random.randint(0, 256, (20, 20, 3), dtype=np.uint8)
+
+    def test_frame_to_gif_image_grayscale(self):
+        """Grayscale dithered frames should convert to a 2-color palette image"""
+        dithered = floyd_steinberg_dither(self.grayscale_image)
+        gif_image = frame_to_gif_image(dithered, is_color=False)
+
+        self.assertIsInstance(gif_image, Image.Image)
+        self.assertEqual(gif_image.mode, 'P')
+        self.assertEqual(gif_image.size, (20, 20))
+
+    def test_frame_to_gif_image_color_exact_palette(self):
+        """Color dithered frames should map exactly onto the dithering palette"""
+        # Palette is in OpenCV's BGR channel order, matching frame_to_gif_image's input.
+        # The intended *visible* RGB colors are written out literally below (not derived
+        # by reproducing the function's own BGR-to-RGB conversion) so this test fails if
+        # that conversion is missing or wrong: black, white, blue, green.
+        bgr_palette = [(0, 0, 0), (255, 255, 255), (255, 0, 0), (0, 255, 0)]
+        expected_rgb_colors = {(0, 0, 0), (255, 255, 255), (0, 0, 255), (0, 255, 0)}
+
+        # Build the frame directly from the palette (rather than running actual
+        # dithering on random data) so every palette entry is guaranteed to appear;
+        # dithering's nearest-color selection isn't guaranteed to hit every entry.
+        rows = [bgr_palette[x % len(bgr_palette)] for x in range(20)]
+        dithered = np.array([rows for _ in range(20)], dtype=np.uint8)
+
+        gif_image = frame_to_gif_image(dithered, is_color=True, palette=bgr_palette)
+
+        self.assertIsInstance(gif_image, Image.Image)
+        self.assertEqual(gif_image.mode, 'P')
+
+        rgb_image = gif_image.convert('RGB')
+        result_colors = {tuple(int(v) for v in color)
+                          for color in np.array(rgb_image).reshape(-1, 3)}
+
+        self.assertEqual(result_colors, expected_rgb_colors)
+
+    def test_frame_to_gif_image_default_palette(self):
+        """When no palette is supplied, the default color palette should be used"""
+        dithered = floyd_steinberg_dither(self.color_image, is_color=True)
+        gif_image = frame_to_gif_image(dithered, is_color=True, palette=None)
+
+        self.assertIsInstance(gif_image, Image.Image)
+        self.assertLessEqual(len(gif_image.getcolors(maxcolors=256)), len(DEFAULT_COLOR_PALETTE))
 
 if __name__ == '__main__':
     unittest.main()
