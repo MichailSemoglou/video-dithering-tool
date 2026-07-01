@@ -2,8 +2,6 @@
 
 A Python tool that applies dithering effects to video files, frame by frame. It implements five algorithms, Floyd-Steinberg (Floyd & Steinberg, 1976), Atkinson, Jarvis-Judice-Ninke (Jarvis, Judice & Ninke, 1976), ordered (Bayer) dithering (Bayer, 1973), and random threshold dithering, then hands the frames to FFmpeg or exports them directly as an animated GIF.
 
-v1.0.0 · released October 2025 · MIT
-
 ## What is Dithering?
 
 Dithering is a technique that creates the illusion of color depth in images with a limited color palette. It is commonly used to create:
